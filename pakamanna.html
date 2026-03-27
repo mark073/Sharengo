@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PAKAMANNA</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+  :root {
+    --neon-yellow: #FFE000;
+    --neon-blue: #00F5FF;
+    --neon-pink: #FF0099;
+    --neon-orange: #FF6600;
+    --neon-red: #FF2222;
+    --bg: #000010;
+    --wall: #1a1aff;
+    --dot: #ffb8ae;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Press Start 2P', monospace;
+    overflow: hidden;
+  }
+
+  /* Scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  #title {
+    color: var(--neon-yellow);
+    font-size: 24px;
+    letter-spacing: 4px;
+    text-shadow: 0 0 10px var(--neon-yellow), 0 0 20px var(--neon-yellow), 0 0 40px #ff9900;
+    margin-bottom: 8px;
+    animation: flicker 3s infinite;
+  }
+
+  @keyframes flicker {
+    0%,95%,100% { opacity: 1; }
+    96% { opacity: 0.8; }
+    97% { opacity: 1; }
+    98% { opacity: 0.6; }
+    99% { opacity: 1; }
+  }
+
+  #hud {
+    display: flex;
+    gap: 40px;
+    color: white;
+    font-size: 9px;
+    margin-bottom: 8px;
+  }
+
+  #hud span { color: var(--neon-yellow); }
+
+  #game-wrapper {
+    position: relative;
+    border: 3px solid var(--neon-blue);
+    box-shadow: 0 0 20px var(--neon-blue), inset 0 0 20px rgba(0,0,255,0.05);
+  }
+
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    background: #000010;
+  }
+
+  #overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,16,0.88);
+    color: white;
+    text-align: center;
+    gap: 16px;
+  }
+
+  #overlay h2 {
+    font-size: 20px;
+    color: var(--neon-yellow);
+    text-shadow: 0 0 10px var(--neon-yellow);
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(0.97); }
+  }
+
+  #overlay p {
+    font-size: 8px;
+    color: var(--neon-blue);
+    line-height: 2;
+    text-shadow: 0 0 6px var(--neon-blue);
+  }
+
+  #start-btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    background: var(--neon-yellow);
+    color: #000;
+    border: none;
+    padding: 12px 24px;
+    cursor: pointer;
+    box-shadow: 0 0 16px var(--neon-yellow);
+    animation: pulse 0.8s ease-in-out infinite;
+    letter-spacing: 2px;
+  }
+
+  #start-btn:hover { background: #fff; box-shadow: 0 0 30px white; }
+
+  #lives-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 8px;
+    color: white;
+    margin-top: 4px;
+  }
+
+  #controls-hint {
+    font-size: 7px;
+    color: #555;
+    margin-top: 4px;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div id="title">PAKAMANNA</div>
+<div id="hud">
+  <div>SCORE: <span id="score-display">0</span></div>
+  <div>HI-SCORE: <span id="hi-display">0</span></div>
+  <div>LEVEL: <span id="level-display">1</span></div>
+</div>
+<div id="game-wrapper">
+  <canvas id="c" width="560" height="620"></canvas>
+  <div id="overlay">
+    <h2>PAKAMANNA</h2>
+    <p>EAT ALL THE DOTS<br>AVOID THE GHOSTS<br>POWER PELLETS = HUNT GHOSTS!</p>
+    <button id="start-btn" onclick="startGame()">INSERT COIN</button>
+    <p>ARROW KEYS / WASD TO MOVE</p>
+  </div>
+</div>
+<div id="lives-row">LIVES: <span id="lives-icons">❤️❤️❤️</span></div>
+<div id="controls-hint">↑↓←→ OR WASD</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const TILE = 20;
+const COLS = 28;
+const ROWS = 31;
+
+// 0=empty, 1=wall, 2=dot, 3=power pellet, 4=ghost house door, 5=tunnel
+const MAP_TEMPLATE = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,3,1,0,0,1,2,1,0,0,0,1,2,1,1,2,1,0,0,0,1,2,1,0,0,1,3,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
+  [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
+  [1,1,1,1,1,1,2,1,1,0,1,1,1,4,4,1,1,1,0,1,1,2,1,1,1,1,1,1],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [5,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,0,1,0,0,0,2,0,0,0,0,0,5],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],
+  [1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
+  [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],
+  [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,3,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,3,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+];
+
+let map, score, hiScore=0, lives, level, gameState, pakX, pakY, pakDir, pakNextDir;
+let pakMouth, pakMouthDir, pakFrame;
+let ghosts, powerTimer, powerActive, animFrame;
+let dotsLeft;
+
+const GHOST_COLORS = ['#FF0000','#FFB8FF','#00FFFF','#FFB852'];
+const GHOST_NAMES = ['Blinky','Pinky','Inky','Clyde'];
+
+function initMap() {
+  map = MAP_TEMPLATE.map(r => [...r]);
+  dotsLeft = 0;
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) {
+    if(map[r][c]===2||map[r][c]===3) dotsLeft++;
+  }
+}
+
+function initGame() {
+  initMap();
+  score = 0;
+  lives = 3;
+  level = 1;
+  gameState = 'playing';
+  startRound();
+}
+
+function startRound() {
+  pakX = 14 * TILE - TILE/2; pakY = 23 * TILE + TILE/2;
+  pakDir = {x:0,y:0}; pakNextDir = {x:-1,y:0};
+  pakMouth = 0; pakMouthDir = 1; pakFrame = 0;
+  powerActive = false; powerTimer = 0;
+
+  ghosts = [
+    { x:13*TILE+TILE/2, y:14*TILE+TILE/2, dir:{x:0,y:-1}, color:GHOST_COLORS[0], scared:false, eaten:false, spawnDelay:0, mode:'scatter' },
+    { x:14*TILE-TILE/2, y:14*TILE+TILE/2, dir:{x:0,y:-1}, color:GHOST_COLORS[1], scared:false, eaten:false, spawnDelay:60, mode:'scatter' },
+    { x:13*TILE+TILE/2, y:15*TILE+TILE/2, dir:{x:0,y:1},  color:GHOST_COLORS[2], scared:false, eaten:false, spawnDelay:120, mode:'scatter' },
+    { x:14*TILE-TILE/2, y:15*TILE+TILE/2, dir:{x:0,y:1},  color:GHOST_COLORS[3], scared:false, eaten:false, spawnDelay:180, mode:'scatter' },
+  ];
+}
+
+const PAK_SPEED = 2;
+const GHOST_SPEED = 1.5;
+
+function tileAt(px,py) {
+  let c = Math.floor(px/TILE), r = Math.floor(py/TILE);
+  if(r<0||r>=ROWS) return 0;
+  c = ((c%COLS)+COLS)%COLS;
+  return map[r][c];
+}
+
+function isWall(px,py) {
+  const t = tileAt(px,py);
+  return t===1;
+}
+
+function canMove(cx,cy,dx,dy,size=8) {
+  const nx=cx+dx, ny=cy+dy;
+  const checks = [
+    [nx-size,ny-size],[nx+size-1,ny-size],
+    [nx-size,ny+size-1],[nx+size-1,ny+size-1]
+  ];
+  for(const [tx,ty] of checks) {
+    if(isWall(((tx%560)+560)%560, ty)) return false;
+  }
+  return true;
+}
+
+function updatePakamanna() {
+  // Try next direction
+  const ns = PAK_SPEED;
+  if((pakNextDir.x!==0||pakNextDir.y!==0) &&
+     canMove(pakX,pakY,pakNextDir.x*ns,pakNextDir.y*ns)) {
+    pakDir = {...pakNextDir};
+  }
+  if(canMove(pakX,pakY,pakDir.x*ns,pakDir.y*ns)) {
+    pakX += pakDir.x*ns;
+    pakY += pakDir.y*ns;
+    // Tunnel wrap
+    if(pakX<0) pakX += COLS*TILE;
+    if(pakX>=COLS*TILE) pakX -= COLS*TILE;
+  }
+
+  // Mouth animation
+  pakMouth += pakMouthDir * 8;
+  if(pakMouth >= 45) pakMouthDir = -1;
+  if(pakMouth <= 0)  pakMouthDir = 1;
+  pakFrame++;
+
+  // Eat dots
+  const tc = Math.floor(pakX/TILE), tr = Math.floor(pakY/TILE);
+  if(tr>=0&&tr<ROWS&&tc>=0&&tc<COLS) {
+    if(map[tr][tc]===2) {
+      map[tr][tc]=0; score+=10; dotsLeft--;
+      updateHUD();
+    } else if(map[tr][tc]===3) {
+      map[tr][tc]=0; score+=50; dotsLeft--;
+      powerActive=true; powerTimer=300;
+      ghosts.forEach(g=>{if(!g.eaten)g.scared=true;});
+      updateHUD();
+    }
+  }
+
+  if(dotsLeft<=0) { nextLevel(); }
+}
+
+function updateGhosts() {
+  if(powerActive) {
+    powerTimer--;
+    if(powerTimer<=0) {
+      powerActive=false;
+      ghosts.forEach(g=>{g.scared=false; g.eaten=false;});
+    }
+  }
+
+  for(const g of ghosts) {
+    if(g.spawnDelay>0) { g.spawnDelay--; continue; }
+    const speed = g.eaten ? GHOST_SPEED*2 : g.scared ? GHOST_SPEED*0.6 : GHOST_SPEED;
+    const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+    
+    // Check if at tile center (can turn)
+    const onGridX = Math.abs(g.x % TILE - TILE/2) < speed+1;
+    const onGridY = Math.abs(g.y % TILE - TILE/2) < speed+1;
+
+    if(onGridX && onGridY) {
+      // Snap to grid
+      g.x = Math.round(g.x/TILE)*TILE + TILE/2 - 1;
+      g.y = Math.round(g.y/TILE)*TILE + TILE/2 - 1;
+
+      // Choose direction
+      const possible = dirs.filter(d => {
+        if(d.x===-g.dir.x && d.y===-g.dir.y) return false; // no reverse
+        return canMove(g.x,g.y,d.x*speed,d.y*speed,6);
+      });
+
+      if(possible.length > 0) {
+        if(g.scared) {
+          g.dir = possible[Math.floor(Math.random()*possible.length)];
+        } else {
+          // Chase pakamanna
+          let best = possible[0], bestDist = Infinity;
+          for(const d of possible) {
+            const nx=g.x+d.x*TILE, ny=g.y+d.y*TILE;
+            const dist = Math.hypot(nx-pakX,ny-pakY);
+            if(dist < bestDist) { bestDist=dist; best=d; }
+          }
+          g.dir = best;
+        }
+      } else if(possible.length===0) {
+        // reverse
+        const rev = dirs.find(d=>d.x===-g.dir.x&&d.y===-g.dir.y&&canMove(g.x,g.y,d.x*speed,d.y*speed,6));
+        if(rev) g.dir=rev;
+      }
+    }
+
+    g.x += g.dir.x * speed;
+    g.y += g.dir.y * speed;
+    // Tunnel
+    if(g.x<0) g.x+=COLS*TILE;
+    if(g.x>=COLS*TILE) g.x-=COLS*TILE;
+
+    // Collision with pakamanna
+    if(Math.hypot(g.x-pakX,g.y-pakY)<14) {
+      if(g.scared && !g.eaten) {
+        g.eaten=true; g.scared=false;
+        score+=200; updateHUD();
+      } else if(!g.scared && !g.eaten) {
+        loseLife();
+        return;
+      }
+    }
+  }
+}
+
+function loseLife() {
+  lives--;
+  updateHUD();
+  if(lives<=0) {
+    gameState='gameover';
+    if(score>hiScore) hiScore=score;
+    document.getElementById('hi-display').textContent=hiScore;
+    showOverlay('GAME OVER', 'SCORE: '+score, 'PLAY AGAIN');
+  } else {
+    setTimeout(()=>startRound(), 800);
+  }
+}
+
+function nextLevel() {
+  level++;
+  document.getElementById('level-display').textContent=level;
+  initMap();
+  setTimeout(()=>startRound(), 500);
+}
+
+function updateHUD() {
+  document.getElementById('score-display').textContent=score;
+  document.getElementById('hi-display').textContent=Math.max(score,hiScore);
+  const livesEl = document.getElementById('lives-icons');
+  livesEl.textContent = '❤️'.repeat(Math.max(0,lives));
+}
+
+function showOverlay(title, sub, btnText) {
+  const ov = document.getElementById('overlay');
+  ov.innerHTML = `<h2>${title}</h2><p>${sub}</p><button id="start-btn" onclick="startGame()" style="font-family:'Press Start 2P',monospace;font-size:10px;background:var(--neon-yellow);color:#000;border:none;padding:12px 24px;cursor:pointer;box-shadow:0 0 16px var(--neon-yellow);letter-spacing:2px">${btnText}</button>`;
+  ov.style.display='flex';
+}
+
+// ---- DRAWING ----
+function drawMap() {
+  for(let r=0;r<ROWS;r++) {
+    for(let c=0;c<COLS;c++) {
+      const t = map[r][c];
+      const x=c*TILE, y=r*TILE;
+      if(t===1) {
+        // Wall with neon blue glow
+        ctx.fillStyle='#1a1aff';
+        ctx.fillRect(x,y,TILE,TILE);
+        ctx.strokeStyle='#4444ff';
+        ctx.lineWidth=1;
+        ctx.strokeRect(x+0.5,y+0.5,TILE-1,TILE-1);
+      } else if(t===2) {
+        // Dot
+        ctx.fillStyle=`hsl(${(pakFrame*3+r*10+c*7)%360},100%,75%)`;
+        ctx.beginPath();
+        ctx.arc(x+TILE/2,y+TILE/2,2.5,0,Math.PI*2);
+        ctx.fill();
+      } else if(t===3) {
+        // Power pellet - pulsing
+        const pulse = Math.sin(pakFrame*0.1)*3+6;
+        ctx.fillStyle='#ffffff';
+        ctx.shadowColor='#ffffff';
+        ctx.shadowBlur=10;
+        ctx.beginPath();
+        ctx.arc(x+TILE/2,y+TILE/2,pulse/2,0,Math.PI*2);
+        ctx.fill();
+        ctx.shadowBlur=0;
+      } else if(t===4) {
+        // Ghost house door
+        ctx.fillStyle='#ff88ff';
+        ctx.fillRect(x,y+TILE/2-2,TILE,4);
+      }
+    }
+  }
+}
+
+function drawPakamanna() {
+  const x=pakX, y=pakY, r=TILE/2-1;
+  // Direction angle
+  let angle=0;
+  if(pakDir.x===1) angle=0;
+  else if(pakDir.x===-1) angle=Math.PI;
+  else if(pakDir.y===-1) angle=-Math.PI/2;
+  else if(pakDir.y===1) angle=Math.PI/2;
+
+  const mouthRad = (pakMouth*Math.PI/180);
+
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.rotate(angle);
+
+  // Glow
+  ctx.shadowColor=var_neon_yellow;
+  ctx.shadowBlur=12;
+
+  ctx.fillStyle='#FFE000';
+  ctx.beginPath();
+  ctx.moveTo(0,0);
+  ctx.arc(0,0,r,mouthRad,-mouthRad,false);
+  ctx.closePath();
+  ctx.fill();
+
+  // Eye
+  ctx.fillStyle='#000';
+  ctx.shadowBlur=0;
+  ctx.beginPath();
+  ctx.arc(-2,-r*0.5,2,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+const var_neon_yellow='#FFE000';
+
+function drawGhost(g) {
+  const x=g.x, y=g.y;
+  const w=TILE-2, h=TILE-2;
+  const scared = g.scared && !g.eaten;
+  const blinking = g.scared && powerTimer<100 && Math.floor(pakFrame/8)%2===0;
+
+  ctx.save();
+  ctx.translate(x-w/2, y-h/2);
+
+  let color = scared ? (blinking?'#ffffff':'#0000ff') : g.color;
+  if(g.eaten) color='rgba(0,0,0,0)';
+
+  // Body
+  ctx.fillStyle=color;
+  ctx.shadowColor=color;
+  ctx.shadowBlur=g.eaten?0:8;
+
+  if(!g.eaten) {
+    ctx.beginPath();
+    ctx.arc(w/2, h*0.45, w/2, Math.PI, 0, false);
+    ctx.lineTo(w, h);
+    // Wavy bottom
+    const waveCount=3;
+    for(let i=waveCount;i>=0;i--) {
+      const xp=(i/waveCount)*w;
+      const yp=h-(Math.sin(pakFrame*0.15+i*1.2)*3+4);
+      ctx.lineTo(xp,yp);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Eyes
+    if(!scared) {
+      ctx.fillStyle='#ffffff';
+      ctx.shadowBlur=0;
+      ctx.beginPath();ctx.ellipse(w*0.3,h*0.4,3.5,4.5,0,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.ellipse(w*0.7,h*0.4,3.5,4.5,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#00f';
+      ctx.beginPath();ctx.arc(w*0.32,h*0.42,2,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(w*0.72,h*0.42,2,0,Math.PI*2);ctx.fill();
+    } else {
+      // Scared face
+      ctx.strokeStyle='#ffffff';
+      ctx.lineWidth=1.5;
+      ctx.shadowBlur=0;
+      ctx.beginPath();ctx.arc(w*0.3,h*0.4,2,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.arc(w*0.7,h*0.4,2,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(w*0.2,h*0.6);
+      for(let i=0;i<=4;i++) ctx.lineTo(w*0.2+i*(w*0.6/4), h*0.6+(i%2===0?3:-3));
+      ctx.stroke();
+    }
+  } else {
+    // Just eyes when eaten
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#00aaff';
+    ctx.beginPath();ctx.ellipse(w*0.3,h*0.45,4,5,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(w*0.7,h*0.45,4,5,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ffffff';
+    ctx.beginPath();ctx.arc(w*0.3,h*0.43,2,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(w*0.7,h*0.43,2,0,Math.PI*2);ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawPowerBar() {
+  if(!powerActive) return;
+  const bw=120, bh=6, bx=canvas.width/2-bw/2, by=canvas.height-12;
+  ctx.fillStyle='#333';
+  ctx.fillRect(bx,by,bw,bh);
+  const pct=powerTimer/300;
+  const col = pct>0.3?`hsl(${120*pct},100%,50%)`:'#ff0000';
+  ctx.fillStyle=col;
+  ctx.shadowColor=col;
+  ctx.shadowBlur=6;
+  ctx.fillRect(bx,by,bw*pct,bh);
+  ctx.shadowBlur=0;
+}
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // Subtle grid bg
+  ctx.fillStyle='#000010';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  drawMap();
+  for(const g of ghosts) drawGhost(g);
+  drawPakamanna();
+  drawPowerBar();
+}
+
+function gameLoop() {
+  if(gameState==='playing') {
+    updatePakamanna();
+    updateGhosts();
+    draw();
+  }
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+function startGame() {
+  document.getElementById('overlay').style.display='none';
+  initGame();
+  updateHUD();
+  if(animFrame) cancelAnimationFrame(animFrame);
+  gameLoop();
+}
+
+// Input
+const keys={};
+window.addEventListener('keydown', e=>{
+  keys[e.key]=true;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A')  pakNextDir={x:-1,y:0};
+  if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') pakNextDir={x:1,y:0};
+  if(e.key==='ArrowUp'||e.key==='w'||e.key==='W')    pakNextDir={x:0,y:-1};
+  if(e.key==='ArrowDown'||e.key==='s'||e.key==='S')  pakNextDir={x:0,y:1};
+});
+window.addEventListener('keyup', e=>{ keys[e.key]=false; });
+
+// Touch controls
+let touchStartX=0, touchStartY=0;
+canvas.addEventListener('touchstart',e=>{
+  touchStartX=e.touches[0].clientX;
+  touchStartY=e.touches[0].clientY;
+  e.preventDefault();
+},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  const dx=e.changedTouches[0].clientX-touchStartX;
+  const dy=e.changedTouches[0].clientY-touchStartY;
+  if(Math.abs(dx)>Math.abs(dy)) {
+    pakNextDir = dx>0?{x:1,y:0}:{x:-1,y:0};
+  } else {
+    pakNextDir = dy>0?{x:0,y:1}:{x:0,y:-1};
+  }
+  e.preventDefault();
+},{passive:false});
+
+// Initial draw
+draw();
+</script>
+</body>
+</html>
