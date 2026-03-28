@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LABYRINTH - 8-BIT ARCADE</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -13,7 +14,7 @@
     justify-content: center;
     min-height: 100vh;
     font-family: monospace;
-    overflow: hidden;
+    overflow-x: hidden;
   }
   #gameContainer {
     position: relative;
@@ -21,11 +22,14 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
+    width: 100%;
+    max-width: 560px;
+    padding: 0 4px;
   }
   #hud {
     display: flex;
     justify-content: space-between;
-    width: 560px;
+    width: 100%;
     color: #fff;
     font-size: 14px;
     letter-spacing: 2px;
@@ -34,17 +38,23 @@
     image-rendering: pixelated;
   }
   #hud span { color: #ffdd00; }
+  #canvas-wrapper {
+    position: relative;
+    width: 100%;
+  }
   canvas {
     border: 3px solid #444;
     image-rendering: pixelated;
     display: block;
+    width: 100%;
+    height: auto;
   }
   #overlay {
     position: absolute;
-    top: 28px;
+    top: 0;
     left: 0;
-    width: 560px;
-    height: 560px;
+    right: 0;
+    bottom: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -91,6 +101,18 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0; }
   }
+  @media (max-width: 480px) {
+    #hud { font-size: 10px; letter-spacing: 1px; }
+    #overlay h1 { font-size: 26px; letter-spacing: 3px; }
+    #overlay .subtitle { font-size: 10px; letter-spacing: 2px; margin-bottom: 16px; }
+    #overlay .press-start { font-size: 12px; }
+    #overlay .controls { font-size: 9px; }
+    #overlay .gameover-score { font-size: 13px; }
+  }
+  @media (max-width: 360px) {
+    #overlay h1 { font-size: 20px; }
+    #hud { font-size: 9px; }
+  }
 </style>
 </head>
 <body>
@@ -100,6 +122,7 @@
     <div>LEVEL: <span id="levelDisplay">1</span></div>
     <div>LIVES: <span id="livesDisplay">♥♥♥</span></div>
   </div>
+  <div id="canvas-wrapper">
   <canvas id="gameCanvas" width="560" height="560"></canvas>
   <div id="overlay">
     <h1>LABYRINTH</h1>
@@ -110,6 +133,7 @@
       REACH THE EXIT ★ AVOID THE MINOTAUR
     </div>
   </div>
+  </div><!-- /canvas-wrapper -->
 </div>
 
 <script>
@@ -286,6 +310,29 @@ document.addEventListener('keydown', e => {
   keysDown[e.key] = true;
 });
 document.addEventListener('keyup', e => { delete keysDown[e.key]; });
+
+// Touch / swipe controls
+let touchStartX = 0, touchStartY = 0;
+canvas.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+  if (state === 'title' || state === 'gameover') { initAudio(); startGame(); }
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchend', e => {
+  if (state !== 'playing') return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+  keysDown = {};
+  if (Math.abs(dx) > Math.abs(dy)) {
+    keysDown[dx > 0 ? 'ArrowRight' : 'ArrowLeft'] = true;
+  } else {
+    keysDown[dy > 0 ? 'ArrowDown' : 'ArrowUp'] = true;
+  }
+  setTimeout(() => { keysDown = {}; }, 200);
+  e.preventDefault();
+}, { passive: false });
 
 function tryMove() {
   for (const key of Object.keys(keysDown)) {
