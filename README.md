@@ -1,6 +1,6 @@
 # Sharengo
 A repo for sharing... 
-Some HTML games and other stuff. Just download and open in browser.
+A few HTML games and some other stuff. 
 You may do anything with the files - licensed by the Unlicense.
 
 
