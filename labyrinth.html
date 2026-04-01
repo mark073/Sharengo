@@ -61,6 +61,7 @@
     justify-content: center;
     background: rgba(0,0,0,0.85);
     color: #fff;
+    cursor: pointer;
   }
   #overlay h1 {
     font-size: 42px;
@@ -127,7 +128,7 @@
   <div id="overlay">
     <h1>LABYRINTH</h1>
     <div class="subtitle">★ 8-BIT ARCADE ★</div>
-    <div class="press-start">PRESS SPACE TO START</div>
+    <div class="press-start">TAP / SPACE TO START</div>
     <div class="controls">
       WASD / ARROW KEYS — MOVE<br>
       REACH THE EXIT ★ AVOID THE MINOTAUR
@@ -310,6 +311,15 @@ document.addEventListener('keydown', e => {
   keysDown[e.key] = true;
 });
 document.addEventListener('keyup', e => { delete keysDown[e.key]; });
+
+// Tap overlay to start / retry
+overlay.addEventListener('click', () => {
+  if (state === 'title' || state === 'gameover') { initAudio(); startGame(); }
+});
+overlay.addEventListener('touchstart', e => {
+  if (state === 'title' || state === 'gameover') { initAudio(); startGame(); }
+  e.preventDefault();
+}, { passive: false });
 
 // Touch / swipe controls
 let touchStartX = 0, touchStartY = 0;
@@ -702,7 +712,7 @@ function showOverlay(type) {
     overlay.innerHTML = `
       <h1>GAME OVER</h1>
       <div class="gameover-score">SCORE: ${score}</div>
-      <div class="press-start">PRESS SPACE TO RETRY</div>
+      <div class="press-start">TAP / SPACE TO RETRY</div>
     `;
   }
 }
